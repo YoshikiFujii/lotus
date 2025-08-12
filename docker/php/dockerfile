@@ -1,0 +1,14 @@
+FROM php:8.2-fpm-alpine
+
+# 必要拡張をインストール（pdo_mysql, sockets等）
+RUN docker-php-ext-install pdo pdo_mysql
+
+# タイムゾーン設定
+RUN apk add --no-cache tzdata git unzip \
+    && cp /usr/share/zoneinfo/Asia/Tokyo /etc/localtime \
+    && echo "Asia/Tokyo" > /etc/timezone
+
+# Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www

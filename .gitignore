@@ -1,0 +1,21 @@
+# 環境設定ファイル（実データは除外）
+.env
+
+# Composer依存
+/vendor/
+
+# MariaDBデータ
+/db_data/
+
+# キャッシュ・ログ
+*.log
+*.cache
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Node（将来JSビルドを入れる場合）
+node_modules/
