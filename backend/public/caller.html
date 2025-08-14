@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Caller - 呼び出し</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  h2 { margin-bottom: 8px; }
+  .sec { margin-top: 16px; }
+  .row { display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee; }
+  .ticket { font-weight:700; font-size:20px; width:90px; }
+  button { padding:8px 12px; border:1px solid #ccc; border-radius:8px; background:#fafafa; }
+</style>
+<body>
+<h2>Caller 呼び出し</h2>
+<label>Shop ID:
+  <input id="shopId" type="number" value="1" min="1" style="width:80px;">
+</label>
+<button id="reload">更新</button>
+
+<div class="sec">
+  <h3>完成（READY）</h3>
+  <div id="ready"></div>
+</div>
+
+<div class="sec">
+  <h3>呼出し中（CALLED）</h3>
+  <div id="called"></div>
+</div>
+
+<script>
+const api = (p, opt={}) => fetch(p, opt).then(r => r.json());
+
+async function load() {
+  const shopId = Number(document.getElementById('shopId').value || 1);
+  const data = await api(`/api/orders/waiting?shop_id=${shopId}`);
+  const items = (data.items || []);
+  const ready = items.filter(x=>x.status==='READY');
+  const called = items.filter(x=>x.status==='CALLED');
+
+  const readyWrap = document.getElementById('ready');
+  const calledWrap = document.getElementById('called');
+  readyWrap.innerHTML = '';
+  calledWrap.innerHTML = '';
+
+  ready.forEach(o=>{
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `
+      <div class="ticket">#${o.ticket_number}</div>
+      <button data-to="CALLED">呼び出し</button>
+    `;
+    row.querySelector('button').onclick = async () => {
+      await api(`/api/orders/${o.id}/status`, {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ to:'CALLED' })
+      });
+      await load();
+    };
+    readyWrap.appendChild(row);
+  });
+
+  called.forEach(o=>{
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `
+      <div class="ticket">#${o.ticket_number}</div>
+      <button data-to="DELIVERED">受け渡し完了</button>
+    `;
+    row.querySelector('button').onclick = async () => {
+      await api(`/api/orders/${o.id}/status`, {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ to:'DELIVERED' })
+      });
+      await load();
+    };
+    calledWrap.appendChild(row);
+  });
+}
+
+document.getElementById('reload').onclick = load;
+setInterval(load, 3000);
+load();
+</script>
+</body>
+</html>

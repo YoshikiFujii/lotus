@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cook - 待ち一覧</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  .row { display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee; }
+  .badge { padding:2px 8px; border-radius:12px; font-size:12px; background:#eee; }
+  button { padding:8px 12px; border:1px solid #ccc; border-radius:8px; background:#fafafa; }
+  .ticket { font-weight:700; font-size:18px; width:80px; }
+  .amt { margin-left:auto; min-width:80px; text-align:right; }
+</style>
+<body>
+<h2>Cook待ち一覧</h2>
+<label>Shop ID:
+  <input id="shopId" type="number" value="1" min="1" style="width:80px;">
+</label>
+<button id="reload">更新</button>
+<div id="list"></div>
+
+<script>
+const fmtJPY = v => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(v);
+const api = (p, opt={}) => fetch(p, opt).then(r => r.json());
+
+async function load() {
+  const shopId = Number(document.getElementById('shopId').value || 1);
+  const data = await api(`/api/orders/waiting?shop_id=${shopId}`);
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  (data.items || []).forEach(o => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <div class="ticket">#${o.ticket_number}</div>
+      <span class="badge">${o.status}</span>
+      <div class="amt">${fmtJPY((o.amount_cents||0))}</div>
+      <div style="display:flex; gap:6px; margin-left:8px;">
+        <button data-to="RECEIVED">受付</button>
+        <button data-to="PREPARING">調理中</button>
+        <button data-to="READY">完成</button>
+      </div>
+    `;
+    row.querySelectorAll('button').forEach(b=>{
+      b.onclick = async () => {
+        await api(`/api/orders/${o.id}/status`, {
+          method:'PATCH',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ to: b.dataset.to })
+        });
+        await load();
+      };
+    });
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('reload').onclick = load;
+setInterval(load, 3000);
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Casher - 注文入力</title>
+<style>
+  :root { --gap: 10px; }
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  h2 { margin: 0 0 10px; }
+  .toolbar { display:flex; gap: var(--gap); align-items:center; margin-bottom: 12px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--gap);
+  }
+  .card {
+    border: 1px solid #ddd; border-radius: 10px; padding: 10px;
+    display:flex; flex-direction:column; gap: 8px; background:#fff;
+  }
+  .name { font-weight: 700; }
+  .price { font-size: 12px; opacity: .7; }
+  .qty { display:flex; align-items:center; gap:8px; }
+  .qty button { width:32px; height:32px; border-radius: 8px; border:1px solid #ccc; background:#fafafa; }
+  .qty input { width:48px; text-align:center; font-size:16px; padding:4px; }
+  .footer {
+    position: sticky; bottom: 0; background: #fff; padding: 10px 0; margin-top: 12px;
+    border-top: 1px solid #eee; display:flex; gap: var(--gap); align-items:center; justify-content: space-between;
+  }
+  .total { font-size: 18px; font-weight: 700; }
+  .primary { padding: 10px 16px; border-radius: 10px; background:#0b74de; color:#fff; border:none; font-size:16px; }
+  .ghost { padding: 10px 16px; border-radius: 10px; background:#f7f7f7; color:#333; border:1px solid #ccc; font-size:14px; }
+  .ticket { font-size: 20px; font-weight: 800; color:#0a8a41; }
+  .note { font-size:12px; opacity:.7; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<body>
+<h2>Casher 注文入力</h2>
+
+<div class="toolbar">
+  <label>Shop ID:
+    <input id="shopId" type="number" value="1" min="1" style="width:90px;">
+  </label>
+  <button id="reload" class="ghost">商品を再読込</button>
+  <span class="note">※ 先に <code>products</code> テーブルへ商品を登録しておいてください</span>
+</div>
+
+<div id="productGrid" class="grid"></div>
+
+<div class="footer">
+  <div class="total">合計: <span id="totalJPY">¥0</span></div>
+  <div style="display:flex; gap:10px;">
+    <button id="clear" class="ghost">数量クリア</button>
+    <button id="submit" class="primary">注文を送信</button>
+  </div>
+</div>
+
+<div id="result" style="margin-top:10px;"></div>
+<!-- bodyのフッター付近にQR表示用の領域を追加 -->
+<div id="qrWrap" style="margin-top:14px;"></div>
+<script>
+const fmtJPY = v => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(v);
+
+let products = [];     // {id, name, price_cents}
+let quantities = {};   // {product_id: qty}
+
+function calcTotal() {
+  let sum = 0;
+  for (const p of products) {
+    const q = quantities[p.id] || 0;
+    sum += p.price_cents * q;
+  }
+  document.getElementById('totalJPY').textContent = fmtJPY(sum);
+  return sum;
+}
+
+function renderProducts() {
+  const grid = document.getElementById('productGrid');
+  grid.innerHTML = '';
+  products.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="name">${p.name}</div>
+      <div class="price">${fmtJPY(p.price_cents)}</div>
+      <div class="qty">
+        <button data-act="dec">−</button>
+        <input type="number" min="0" step="1" value="${quantities[p.id]||0}">
+        <button data-act="inc">＋</button>
+      </div>
+    `;
+    const input = card.querySelector('input');
+    const dec = card.querySelector('[data-act="dec"]');
+    const inc = card.querySelector('[data-act="inc"]');
+    const set = (v) => {
+      const n = Math.max(0, parseInt(v || '0', 10));
+      quantities[p.id] = n;
+      input.value = n;
+      calcTotal();
+    };
+    dec.onclick = () => set((quantities[p.id]||0) - 1);
+    inc.onclick = () => set((quantities[p.id]||0) + 1);
+    input.oninput = () => set(input.value);
+    grid.appendChild(card);
+  });
+  calcTotal();
+}
+
+async function loadProducts() {
+  const shopId = Number(document.getElementById('shopId').value || 1);
+  const res = await fetch(`/api/products?shop_id=${shopId}`);
+  const data = await res.json();
+  products = (data.items || []);
+  // 未選択状態に戻す
+  quantities = {};
+  renderProducts();
+}
+
+async function submitOrder() {
+  const shopId = Number(document.getElementById('shopId').value || 1);
+  const items = products
+    .filter(p => (quantities[p.id] || 0) > 0)
+    .map(p => ({
+      product_id: p.id,
+      name: p.name,
+      unit_price_cents: p.price_cents,
+      qty: quantities[p.id]
+    }));
+
+  if (items.length === 0) {
+    alert('数量が選択されていません');
+    return;
+  }
+
+  const btn = document.getElementById('submit');
+  btn.disabled = true; btn.textContent = '送信中…';
+
+  try {
+    // 1) 注文送信
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ shop_id: shopId, items })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '送信に失敗しました');
+
+    // 2) 呼出番号表示＆入力リセット
+    document.getElementById('result').innerHTML =
+      `<div class="ticket">呼出番号 #${data.ticket_number}</div>
+       <div>合計: ${fmtJPY(data.total_cents || 0)}</div>`;
+    quantities = {};
+    renderProducts();
+
+    // 3) 客セッション発行
+    const sessRes = await fetch('/api/customer/session', { method:'POST' });
+    if (!sessRes.ok) {
+      const t = await sessRes.text();
+      throw new Error('セッション発行に失敗しました: ' + t);
+    }
+    const sess = await sessRes.json();
+    if (!sess.url) throw new Error('QR用URLが取得できませんでした');
+
+    // 4) 注文とセッションを紐付け（← data.order_id はこのスコープで参照可）
+    const linkRes = await fetch('/api/customer/link', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ order_id: data.order_id, public_token: sess.public_token })
+    });
+    if (!linkRes.ok) {
+      const t = await linkRes.text();
+      throw new Error('注文とセッションの紐付けに失敗しました: ' + t);
+    }
+
+    // 5) QR描画
+    const qrWrap = document.getElementById('qrWrap');
+    qrWrap.innerHTML = `
+      <div style="margin-top:8px;">
+        <div style="font-weight:700;">お客様用QR（待ち状況の表示）</div>
+        <div id="qrcode" style="margin-top:8px;"></div>
+        <div style="font-size:12px; opacity:.7; margin-top:6px;">
+          読み取れない場合はこのURLを開いてください：
+          <div style="word-break:break-all;"><a href="${sess.url}" target="_blank">${sess.url}</a></div>
+        </div>
+      </div>
+    `;
+
+    // 6) ライブラリ確実化（万が一外れていた場合に備え）
+    if (!window.QRCode) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+        s.onload = resolve; s.onerror = () => reject(new Error('QRライブラリ読込失敗'));
+        document.head.appendChild(s);
+      });
+    }
+
+    const el = document.getElementById('qrcode');
+    if (!el) throw new Error('#qrcode が見つかりません');
+    new QRCode(el, { text: sess.url, width: 160, height: 160 });
+
+  } catch (e) {
+    alert(e.message);
+    console.error(e);
+    return; // 失敗時はここで終了
+  } finally {
+    btn.disabled = false; btn.textContent = '注文を送信';
+  }
+}
+
+document.getElementById('reload').onclick = loadProducts;
+document.getElementById('submit').onclick = submitOrder;
+document.getElementById('clear').onclick = () => { quantities = {}; renderProducts(); };
+document.getElementById('shopId').onchange = loadProducts;
+
+// 初回ロード
+loadProducts();
+</script>
+</body>
+</html>

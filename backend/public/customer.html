@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お呼び出し状況</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  h2 { margin: 0 0 12px; }
+  .hint { font-size: 12px; opacity:.7; margin-bottom:10px; }
+  .row { border:1px solid #eee; border-radius:10px; padding:10px; margin-bottom:10px; }
+  .ticket { font-size:24px; font-weight:800; }
+  .status { font-weight:700; }
+  .called { color:#0a8a41; }
+</style>
+<body>
+<h2>注文のお呼び出し状況</h2>
+<div class="hint">この画面は自動更新されます。</div>
+<div id="list"></div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const publicToken = qs.get('t') || '';
+const STORAGE_KEY = 'lotus_cookie_token';
+
+async function getCookieToken() {
+  // 既に保存済みならそれを使う
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) return saved;
+
+  // public_token から交換
+  if (!publicToken) {
+    throw new Error('このページはQRからアクセスしてください（public_tokenなし）');
+  }
+  const res = await fetch(`/api/customer/redeem?public_token=${encodeURIComponent(publicToken)}`, {
+    cache: 'no-store'
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'redeemに失敗しました');
+  localStorage.setItem(STORAGE_KEY, data.cookie_token);
+  return data.cookie_token;
+}
+
+async function fetchOrders() {
+  try {
+    const cookieToken = await getCookieToken();
+    const res = await fetch(`/api/customer/orders?cookie_token=${encodeURIComponent(cookieToken)}`, {
+      cache: 'no-store'
+    });
+    const data = await res.json();
+
+    const list = document.getElementById('list');
+    list.innerHTML = '';
+    (data.items || []).forEach(o => {
+      const div = document.createElement('div');
+      const called = (o.status === 'CALLED');
+      div.className = 'row';
+      div.innerHTML = `
+        <div class="ticket">#${o.ticket_number}</div>
+        <div>店舗ID: ${o.shop_id}</div>
+        <div class="status ${called ? 'called' : ''}">
+          状態: ${o.status}${called ? '（受け取り口へお越しください）' : ''}
+        </div>
+      `;
+      list.appendChild(div);
+    });
+    if ((data.items || []).length === 0) {
+      list.innerHTML = '<div class="row">待機中の注文はありません。</div>';
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// 初回＆ポーリング
+fetchOrders();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchOrders(); });
+setInterval(fetchOrders, 3000);
+</script>
+</body>
+</html>
