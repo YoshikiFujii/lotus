@@ -20,8 +20,9 @@
 <div id="list"></div>
 
 <script>
+requireLogin();
 const fmtJPY = v => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(v);
-const api = (p, opt={}) => fetch(p, opt).then(r => r.json());
+const api = (p, opt={}) => authfetch(p, opt).then(r => r.json());
 
 async function load() {
   const shopId = Number(document.getElementById('shopId').value || 1);

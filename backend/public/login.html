@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ログイン - lotus</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 24px; }
+  form { max-width: 360px; margin: 0 auto; display:grid; gap:12px; }
+  input, button { padding:10px; font-size:16px; }
+  button { border:1px solid #ccc; border-radius:8px; background:#0b74de; color:#fff; }
+  .err { color:#b00020; }
+</style>
+<body>
+<h2>ログイン</h2>
+<form id="f">
+  <input id="email" type="email" placeholder="メールアドレス" required />
+  <input id="password" type="password" placeholder="パスワード" required />
+  <button type="submit">ログイン</button>
+  <div id="msg" class="err"></div>
+</form>
+
+<script>
+(async function(){
+  const f = document.getElementById('f');
+  const msg = document.getElementById('msg');
+  f.onsubmit = async (e) => {
+    e.preventDefault(); msg.textContent = '';
+    try {
+      const res = await fetch('/api/login', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          email: document.getElementById('email').value,
+          password: document.getElementById('password').value
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'ログイン失敗');
+      // トークンはlocalStorage保存（※本番はXSS対策が超重要）
+      localStorage.setItem('lotus_token', data.token);
+      localStorage.setItem('lotus_shops', JSON.stringify(data.shops||[]));
+      // 例: casherへ遷移
+      location.href = '/casher.html';
+    } catch(err){ msg.textContent = err.message; }
+  };
+})();
+</script>
+</body>
+</html>

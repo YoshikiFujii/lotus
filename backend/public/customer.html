@@ -18,6 +18,7 @@
 <div id="list"></div>
 
 <script>
+requireLogin();
 const qs = new URLSearchParams(location.search);
 const publicToken = qs.get('t') || '';
 const STORAGE_KEY = 'lotus_cookie_token';
@@ -31,7 +32,7 @@ async function getCookieToken() {
   if (!publicToken) {
     throw new Error('このページはQRからアクセスしてください（public_tokenなし）');
   }
-  const res = await fetch(`/api/customer/redeem?public_token=${encodeURIComponent(publicToken)}`, {
+  const res = await authfetch(`/api/customer/redeem?public_token=${encodeURIComponent(publicToken)}`, {
     cache: 'no-store'
   });
   const data = await res.json();
@@ -43,7 +44,7 @@ async function getCookieToken() {
 async function fetchOrders() {
   try {
     const cookieToken = await getCookieToken();
-    const res = await fetch(`/api/customer/orders?cookie_token=${encodeURIComponent(cookieToken)}`, {
+    const res = await authfetch(`/api/customer/orders?cookie_token=${encodeURIComponent(cookieToken)}`, {
       cache: 'no-store'
     });
     const data = await res.json();

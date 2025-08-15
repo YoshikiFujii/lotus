@@ -29,7 +29,8 @@
 </div>
 
 <script>
-const api = (p, opt={}) => fetch(p, opt).then(r => r.json());
+requireLogin();
+const api = (p, opt={}) => authfetch(p, opt).then(r => r.json());
 
 async function load() {
   const shopId = Number(document.getElementById('shopId').value || 1);

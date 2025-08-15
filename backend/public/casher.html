@@ -33,6 +33,7 @@
   .note { font-size:12px; opacity:.7; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="/auth.iife.js"></script>
 <body>
 <h2>Casher 注文入力</h2>
 
@@ -58,10 +59,11 @@
 <!-- bodyのフッター付近にQR表示用の領域を追加 -->
 <div id="qrWrap" style="margin-top:14px;"></div>
 <script>
+requireLogin();
 const fmtJPY = v => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(v);
 
 let products = [];     // {id, name, price_cents}
-let quantities = {};   // {product_id: qty}
+let quantities = {};   // {product_id: qty}商品IDごとの数量を保存
 
 function calcTotal() {
   let sum = 0;
@@ -75,8 +77,9 @@ function calcTotal() {
 
 function renderProducts() {
   const grid = document.getElementById('productGrid');
-  grid.innerHTML = '';
+  grid.innerHTML = '';  //コンテナ要素を取得して再描写
   products.forEach(p => {
+    //カードの作成
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
@@ -88,15 +91,18 @@ function renderProducts() {
         <button data-act="inc">＋</button>
       </div>
     `;
+    //直近のカードの入力内容を要素参照
     const input = card.querySelector('input');
     const dec = card.querySelector('[data-act="dec"]');
     const inc = card.querySelector('[data-act="inc"]');
+    //増減ボタンや入力欄から数量が変わるごとに呼び出し
     const set = (v) => {
-      const n = Math.max(0, parseInt(v || '0', 10));
+      const n = Math.max(0, parseInt(v || '0', 10)); //perseIntで整数に変換, maxで0未満は0に
       quantities[p.id] = n;
-      input.value = n;
+      input.value = n; //入力欄の値を更新
       calcTotal();
     };
+    //個数を操作するたびにsetを呼び出す
     dec.onclick = () => set((quantities[p.id]||0) - 1);
     inc.onclick = () => set((quantities[p.id]||0) + 1);
     input.oninput = () => set(input.value);
@@ -107,7 +113,7 @@ function renderProducts() {
 
 async function loadProducts() {
   const shopId = Number(document.getElementById('shopId').value || 1);
-  const res = await fetch(`/api/products?shop_id=${shopId}`);
+  const res = await authfetch(`/api/products?shop_id=${shopId}`);
   const data = await res.json();
   products = (data.items || []);
   // 未選択状態に戻す
@@ -136,7 +142,7 @@ async function submitOrder() {
 
   try {
     // 1) 注文送信
-    const res = await fetch('/api/orders', {
+    const res = await authfetch('/api/orders', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ shop_id: shopId, items })
@@ -152,7 +158,7 @@ async function submitOrder() {
     renderProducts();
 
     // 3) 客セッション発行
-    const sessRes = await fetch('/api/customer/session', { method:'POST' });
+    const sessRes = await authfetch('/api/customer/session', { method:'POST' });
     if (!sessRes.ok) {
       const t = await sessRes.text();
       throw new Error('セッション発行に失敗しました: ' + t);
@@ -161,7 +167,7 @@ async function submitOrder() {
     if (!sess.url) throw new Error('QR用URLが取得できませんでした');
 
     // 4) 注文とセッションを紐付け（← data.order_id はこのスコープで参照可）
-    const linkRes = await fetch('/api/customer/link', {
+    const linkRes = await authfetch('/api/customer/link', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ order_id: data.order_id, public_token: sess.public_token })
